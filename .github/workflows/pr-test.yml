@@ -1,0 +1,72 @@
+name: "[Control] pull_request"
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  # 対照実験: pull_request トリガーでの同一確認項目
+  check-context:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Show event context
+        run: |
+          echo "=== Event Context ==="
+          echo "event_name : ${{ github.event_name }}"
+          echo "repository : ${{ github.repository }}"
+          echo "base_ref   : ${{ github.base_ref }}"
+          echo "head_ref   : ${{ github.head_ref }}"
+          echo "head_sha   : ${{ github.event.pull_request.head.sha }}"
+          echo "head_repo  : ${{ github.event.pull_request.head.repo.full_name }}"
+
+      - name: Check secret availability
+        env:
+          SECRET_EXISTS: ${{ secrets.TEST_SECRET != '' }}
+        run: |
+          echo "=== Secret Check ==="
+          echo "TEST_SECRET is available: $SECRET_EXISTS"
+
+      - name: Check GITHUB_TOKEN permissions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== GITHUB_TOKEN Permissions ==="
+          curl -s \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}" \
+            | jq '.permissions'
+
+      - name: Try write - add label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['pr-write-test']
+              });
+              core.notice('WRITE SUCCESS: label added');
+            } catch (e) {
+              core.warning('WRITE FAILED: ' + e.message);
+            }
+
+      - name: Try write - post comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: '[pr-experiment] posted by GITHUB_TOKEN via pull_request'
+              });
+              core.notice('WRITE SUCCESS: comment posted');
+            } catch (e) {
+              core.warning('WRITE FAILED: ' + e.message);
+            }
